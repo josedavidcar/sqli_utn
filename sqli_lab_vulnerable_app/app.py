@@ -19,11 +19,12 @@
     V-08  Sin protección CSRF en formularios
 =============================================================
 """
+
 import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask_wtf.csrf import CSRFProtect                          # V-08: protección CSRF
+from werkzeug.security import generate_password_hash, check_password_hash  # V-03: hashing
 import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, session, flash
-from werkzeug.security import generate_password_hash, check_password_hash
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -38,6 +39,12 @@ app = Flask(__name__)
 # ---------------------------------------------------------------
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-insegura-1234")
 
+# ---------------------------------------------------------------
+# V-08 CORREGIDO: CSRF habilitado globalmente con Flask-WTF.
+# Todos los formularios POST quedan protegidos automáticamente.
+# Recuerda agregar {{ csrf_token() }} en cada <form> del template.
+# ---------------------------------------------------------------
+csrf = CSRFProtect(app)
 
 # ---------------------------------------------------------------
 # Conexión a la base de datos
