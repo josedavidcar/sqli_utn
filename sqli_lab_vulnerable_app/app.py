@@ -22,6 +22,8 @@
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 import sqlite3
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from werkzeug.security import generate_password_hash, check_password_hash
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -82,16 +84,16 @@ def init_db():
     """)
 
     # -------------------------------------------------------
-    # V-03: Contraseñas almacenadas en TEXTO PLANO.
-    # Nunca deben almacenarse así en una aplicación real.
-    # Deben usarse bcrypt, Argon2 o PBKDF2.
+    # V-03 CORREGIDO: Las contraseñas ahora se almacenan con
+    # hash usando generate_password_hash() de werkzeug.
+    # Nunca se guarda la contraseña en texto plano.
     # -------------------------------------------------------
     cur.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
         users = [
-            ("admin",   "Admin123",   "admin"),
-            ("analyst", "Analyst123", "user"),
-            ("student", "Student123", "user"),
+            ("admin",   generate_password_hash("Admin123"),   "admin"),
+            ("analyst", generate_password_hash("Analyst123"), "user"),
+            ("student", generate_password_hash("Student123"), "user"),
         ]
         cur.executemany(
             "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
