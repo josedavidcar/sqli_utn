@@ -19,7 +19,9 @@
       <div class="nav-links">
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
         <a href="{{ url_for('search') }}">Búsqueda</a>
+        {% if session.get('role') == 'admin' %}
         <a href="{{ url_for('admin') }}">Admin</a>
+        {% endif %}
         <span class="nav-user">{{ session.get('username') }} ({{ session.get('role') }})</span>
         <a href="{{ url_for('logout') }}" class="btn-logout">Salir</a>
       </div>

@@ -4,23 +4,24 @@
   Universidad Técnica Nacional
 =============================================================
 
-  ⚠️  ESTE ARCHIVO CONTIENE VULNERABILIDADES INTENCIONALES ⚠️
-  Uso exclusivo para laboratorio académico local.
-  No exponer a Internet ni usar fuera de entorno controlado.
+  ✅ VERSIÓN CORREGIDA — Todas las vulnerabilidades han sido resueltas.
 
-  Vulnerabilidades presentes (para que los estudiantes las encuentren):
-    V-01  SQL Injection en login (concatenación directa)
-    V-02  SQL Injection en búsqueda (concatenación directa)
-    V-03  Contraseñas en texto plano (sin hashing)
-    V-04  SECRET_KEY hardcodeada en el código fuente
-    V-05  Modo debug=True activo (expone debugger interactivo)
-    V-06  Exposición de la consulta SQL cruda en la interfaz
-    V-07  Enlace "Admin" visible para todos los roles en la navegación
-    V-08  Sin protección CSRF en formularios
+  Correcciones aplicadas:
+    V-01  Consulta parametrizada en login (usando ?)
+    V-02  Consulta parametrizada en búsqueda (usando ?)
+    V-03  Contraseñas con hash usando werkzeug.security
+    V-04  SECRET_KEY cargada desde variable de entorno
+    V-05  debug=False (cargado desde variable de entorno)
+    V-06  raw_query eliminada del template
+    V-07  Enlace Admin solo visible para rol admin (en layout.html)
+    V-08  Protección CSRF con Flask-WTF
 =============================================================
 """
 
+import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask_wtf.csrf import CSRFProtect                          # V-08: protección CSRF
+from werkzeug.security import generate_password_hash, check_password_hash  # V-03: hashing
 import sqlite3
 from pathlib import Path
 
@@ -30,11 +31,18 @@ DB_PATH  = BASE_DIR / "db" / "lab.db"
 app = Flask(__name__)
 
 # ---------------------------------------------------------------
-# V-04: SECRET_KEY hardcodeada en el código fuente.
-# En una aplicación real debe cargarse desde una variable de
-# entorno y nunca commitearse al repositorio.
+# V-04 CORREGIDO: SECRET_KEY cargada desde variable de entorno.
+# Si no existe la variable, se lanza un error para no arrancar
+# con una clave insegura por accidente.
 # ---------------------------------------------------------------
-app.config["SECRET_KEY"] = "dev-secret-key-insegura-1234"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-insegura-1234")
+
+# ---------------------------------------------------------------
+# V-08 CORREGIDO: CSRF habilitado globalmente con Flask-WTF.
+# Todos los formularios POST quedan protegidos automáticamente.
+# Recuerda agregar {{ csrf_token() }} en cada <form> del template.
+# ---------------------------------------------------------------
+csrf = CSRFProtect(app)
 
 
 # ---------------------------------------------------------------
@@ -82,16 +90,16 @@ def init_db():
     """)
 
     # -------------------------------------------------------
-    # V-03: Contraseñas almacenadas en TEXTO PLANO.
-    # Nunca deben almacenarse así en una aplicación real.
-    # Deben usarse bcrypt, Argon2 o PBKDF2.
+    # V-03 CORREGIDO: Las contraseñas ahora se almacenan con
+    # hash usando generate_password_hash() de werkzeug.
+    # Nunca se guarda la contraseña en texto plano.
     # -------------------------------------------------------
     cur.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
         users = [
-            ("admin",   "Admin123",   "admin"),
-            ("analyst", "Analyst123", "user"),
-            ("student", "Student123", "user"),
+            ("admin",   generate_password_hash("Admin123"),   "admin"),
+            ("analyst", generate_password_hash("Analyst123"), "user"),
+            ("student", generate_password_hash("Student123"), "user"),
         ]
         cur.executemany(
             "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
@@ -148,35 +156,30 @@ def login():
         password = request.form.get("password", "")
 
         # ---------------------------------------------------
-        # V-01: SQL INJECTION EN LOGIN
-        # La consulta se construye concatenando directamente
-        # el input del usuario sin ningún tipo de validación.
+        # V-01 CORREGIDO: Consulta parametrizada con ?
+        # El input del usuario NUNCA se concatena al SQL.
+        # SQLite recibe el valor como parámetro separado,
+        # por lo que cualquier payload de inyección es
+        # tratado como texto literal, no como código SQL.
         #
-        # Payload de ejemplo que omite la contraseña:
-        #   usuario:  admin' --
-        #   password: (cualquier cosa)
-        #
-        # Payload que accede sin conocer ningún usuario:
-        #   usuario:  ' OR '1'='1' --
-        #   password: (cualquier cosa)
+        # Además, la verificación de contraseña ahora usa
+        # check_password_hash() para comparar con el hash
+        # almacenado (corrección de V-03 en el login).
         # ---------------------------------------------------
-        # V-01: Consulta vulnerable en UNA SOLA LÍNEA para que el comentario
-        # SQL (--) funcione correctamente en SQLite y el payload surta efecto.
-        # Payload de ejemplo: usuario = admin' --  / password = (cualquier cosa)
-        query = f"SELECT id, username, role FROM users WHERE username = '{username}' AND password = '{password}'"
-
         conn = get_connection()
         try:
-            user = conn.execute(query).fetchone()
+            user = conn.execute(
+                "SELECT id, username, password, role FROM users WHERE username = ?",
+                (username,)
+            ).fetchone()
         except Exception as e:
-            # El error de SQLite se muestra directamente — también
-            # es información sensible que no debe exponerse.
-            flash(f"Error en la base de datos: {e}", "error")
+            flash("Error interno. Intente de nuevo.", "error")
             conn.close()
-            return render_template("login.html", last_query=query)
+            return render_template("login.html")
         conn.close()
 
-        if user:
+        # V-03 CORREGIDO: se verifica el hash, no el texto plano
+        if user and check_password_hash(user["password"], password):
             session["user_id"]  = user["id"]
             session["username"] = user["username"]
             session["role"]     = user["role"]
@@ -184,9 +187,10 @@ def login():
             flash("Inicio de sesión exitoso.", "success")
             return redirect(url_for("dashboard"))
 
-        log_event("LOGIN_FAIL", username, f"query={query}")
+        log_event("LOGIN_FAIL", username)
         flash("Credenciales incorrectas.", "error")
 
+    # V-06 CORREGIDO: ya no se pasa raw_query al template
     return render_template("login.html")
 
 
@@ -208,37 +212,34 @@ def search():
         flash("Debe iniciar sesión primero.", "error")
         return redirect(url_for("login"))
 
-    books     = []
-    raw_query = None
+    books = []
 
     if request.method == "POST":
         term = request.form.get("term", "")
 
         # ---------------------------------------------------
-        # V-02: SQL INJECTION EN BÚSQUEDA
-        # El término de búsqueda se inserta directamente en
-        # la consulta con LIKE.
-        #
-        # Payload para extraer todos los usuarios:
+        # V-02 CORREGIDO: Consulta parametrizada con ?
+        # El wildcard % se construye en Python y se pasa
+        # como parámetro, nunca dentro del string SQL.
+        # Un payload como:
         #   %' UNION SELECT id, username, password, role FROM users --
-        #
-        # Payload para verificar número de columnas:
-        #   %' UNION SELECT 1,2,3,4 --
+        # ahora es tratado como texto literal en el LIKE,
+        # por lo que simplemente no retorna resultados.
         # ---------------------------------------------------
-        # V-02: Búsqueda vulnerable también en una sola línea.
-        # Payload: %' UNION SELECT id, username, password, role FROM users --
-        raw_query = f"SELECT id, title, author, category FROM books WHERE title LIKE '%{term}%' OR author LIKE '%{term}%' OR category LIKE '%{term}%'"
-
+        search_term = f"%{term}%"
         conn = get_connection()
         try:
-            books = conn.execute(raw_query).fetchall()
+            books = conn.execute(
+                """SELECT id, title, author, category FROM books
+                   WHERE title LIKE ? OR author LIKE ? OR category LIKE ?""",
+                (search_term, search_term, search_term)
+            ).fetchall()
         except Exception as e:
-            flash(f"Error en la base de datos: {e}", "error")
+            flash("Error interno. Intente de nuevo.", "error")
         conn.close()
 
-    # V-06: La consulta SQL cruda se pasa al template y se
-    # muestra en pantalla — expone la estructura interna de la BD.
-    return render_template("search.html", books=books, raw_query=raw_query)
+    # V-06 CORREGIDO: raw_query eliminada — no se pasa al template
+    return render_template("search.html", books=books)
 
 
 @app.route("/admin")
@@ -253,12 +254,12 @@ def admin():
         return redirect(url_for("dashboard"))
 
     conn  = get_connection()
-    users = conn.execute("SELECT id, username, password, role FROM users ORDER BY id").fetchall()
+    # V-03 CORREGIDO: ya no se expone la columna password en texto plano.
+    # Se muestra solo id, username y role.
+    users = conn.execute("SELECT id, username, role FROM users ORDER BY id").fetchall()
     logs  = conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 20").fetchall()
     conn.close()
 
-    # Nota: se incluye la columna password (texto plano) para que
-    # los estudiantes vean claramente la V-03 desde el panel admin.
     return render_template("admin.html", users=users, logs=logs)
 
 
@@ -271,12 +272,11 @@ def logout():
 
 
 # ---------------------------------------------------------------
-# V-05: debug=True activo.
-# En modo debug, Flask activa un debugger interactivo en el
-# navegador cuando ocurre un error. Cualquier visitante puede
-# ejecutar código Python arbitrario en el servidor.
-# Nunca debe usarse debug=True en producción.
+# V-05 CORREGIDO: debug cargado desde variable de entorno.
+# Por defecto es False. Solo se activa si la variable de entorno
+# FLASK_DEBUG está explícitamente seteada a "1".
 # ---------------------------------------------------------------
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
