@@ -19,7 +19,7 @@
     V-08  Sin protección CSRF en formularios
 =============================================================
 """
-
+import os
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session, flash
@@ -253,12 +253,11 @@ def logout():
 
 
 # ---------------------------------------------------------------
-# V-05: debug=True activo.
-# En modo debug, Flask activa un debugger interactivo en el
-# navegador cuando ocurre un error. Cualquier visitante puede
-# ejecutar código Python arbitrario en el servidor.
-# Nunca debe usarse debug=True en producción.
+# V-05 CORREGIDO: debug cargado desde variable de entorno.
+# Por defecto es False. Solo se activa si la variable de entorno
+# FLASK_DEBUG está explícitamente seteada a "1".
 # ---------------------------------------------------------------
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
