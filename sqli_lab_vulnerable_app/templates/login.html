@@ -17,6 +17,7 @@
   <div class="card">
     <h2>Iniciar sesión</h2>
     <form method="post" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
       <div class="form-group">
         <label for="username">Usuario</label>
         <input type="text" id="username" name="username" placeholder="Ingrese su usuario" required>

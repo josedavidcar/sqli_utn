@@ -22,19 +22,23 @@
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 import sqlite3
+import os
+from werkzeug.security import generate_password_hash, check_password_hash
 from pathlib import Path
+from flask_wtf.csrf import CSRFProtect
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH  = BASE_DIR / "db" / "lab.db"
 
 app = Flask(__name__)
-
+csrf = CSRFProtect(app)
 # ---------------------------------------------------------------
 # V-04: SECRET_KEY hardcodeada en el código fuente.
 # En una aplicación real debe cargarse desde una variable de
 # entorno y nunca commitearse al repositorio.
 # ---------------------------------------------------------------
-app.config["SECRET_KEY"] = "dev-secret-key-insegura-1234"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-solo-local")
 
 
 # ---------------------------------------------------------------
@@ -89,9 +93,9 @@ def init_db():
     cur.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
         users = [
-            ("admin",   "Admin123",   "admin"),
-            ("analyst", "Analyst123", "user"),
-            ("student", "Student123", "user"),
+            ("admin",   generate_password_hash("Admin123"),   "admin"),
+            ("analyst", generate_password_hash("Analyst123"), "user"),
+            ("student", generate_password_hash("Student123"), "user"),
         ]
         cur.executemany(
             "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
@@ -163,20 +167,21 @@ def login():
         # V-01: Consulta vulnerable en UNA SOLA LÍNEA para que el comentario
         # SQL (--) funcione correctamente en SQLite y el payload surta efecto.
         # Payload de ejemplo: usuario = admin' --  / password = (cualquier cosa)
-        query = f"SELECT id, username, role FROM users WHERE username = '{username}' AND password = '{password}'"
-
         conn = get_connection()
         try:
-            user = conn.execute(query).fetchone()
+            user = conn.execute(
+                "SELECT id, username, password, role FROM users WHERE username = ?",
+                (username,)
+            ).fetchone()
         except Exception as e:
             # El error de SQLite se muestra directamente — también
             # es información sensible que no debe exponerse.
             flash(f"Error en la base de datos: {e}", "error")
             conn.close()
-            return render_template("login.html", last_query=query)
+            return render_template("login.html")
         conn.close()
 
-        if user:
+        if user and check_password_hash(user["password"], password):
             session["user_id"]  = user["id"]
             session["username"] = user["username"]
             session["role"]     = user["role"]
@@ -184,7 +189,7 @@ def login():
             flash("Inicio de sesión exitoso.", "success")
             return redirect(url_for("dashboard"))
 
-        log_event("LOGIN_FAIL", username, f"query={query}")
+        log_event("LOGIN_FAIL", username, detail="Credenciales invalidas")
         flash("Credenciales incorrectas.", "error")
 
     return render_template("login.html")
@@ -208,12 +213,10 @@ def search():
         flash("Debe iniciar sesión primero.", "error")
         return redirect(url_for("login"))
 
-    books     = []
-    raw_query = None
+    books = []
 
     if request.method == "POST":
         term = request.form.get("term", "")
-
         # ---------------------------------------------------
         # V-02: SQL INJECTION EN BÚSQUEDA
         # El término de búsqueda se inserta directamente en
@@ -227,19 +230,22 @@ def search():
         # ---------------------------------------------------
         # V-02: Búsqueda vulnerable también en una sola línea.
         # Payload: %' UNION SELECT id, username, password, role FROM users --
-        raw_query = f"SELECT id, title, author, category FROM books WHERE title LIKE '%{term}%' OR author LIKE '%{term}%' OR category LIKE '%{term}%'"
-
+        # DESPUÉS:
         conn = get_connection()
         try:
-            books = conn.execute(raw_query).fetchall()
+            books = conn.execute(
+                "SELECT id, title, author, category FROM books WHERE title LIKE ? OR author LIKE ? OR category LIKE ?",
+                (f"%{term}%", f"%{term}%", f"%{term}%")
+            ).fetchall()
         except Exception as e:
             flash(f"Error en la base de datos: {e}", "error")
         conn.close()
 
+    
+
     # V-06: La consulta SQL cruda se pasa al template y se
     # muestra en pantalla — expone la estructura interna de la BD.
-    return render_template("search.html", books=books, raw_query=raw_query)
-
+    return render_template("search.html", books=books)
 
 @app.route("/admin")
 def admin():
@@ -279,4 +285,4 @@ def logout():
 # ---------------------------------------------------------------
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=False)

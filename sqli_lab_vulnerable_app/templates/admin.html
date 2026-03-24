@@ -7,25 +7,16 @@
 
 <div class="card">
   <h2>Usuarios del sistema</h2>
-  <!--
-    V-03: Las contraseñas se almacenan y muestran en TEXTO PLANO.
-    Cualquier persona con acceso a la BD o al panel admin
-    puede ver las contraseñas de todos los usuarios.
-    Deben almacenarse como hash (bcrypt, Argon2, PBKDF2).
-  -->
-  <div class="vuln-banner">
-    ⚠️ Las contraseñas se muestran en texto plano — esto es una vulnerabilidad intencional (V-03).
-  </div>
   <table class="data-table">
     <thead>
-      <tr><th>ID</th><th>Usuario</th><th>Contraseña (texto plano ⚠️)</th><th>Rol</th></tr>
+      <tr><th>ID</th><th>Usuario</th><th>Contraseña (hash)</th><th>Rol</th></tr>
     </thead>
     <tbody>
       {% for user in users %}
       <tr>
         <td>{{ user["id"] }}</td>
         <td>{{ user["username"] }}</td>
-        <td class="password-cell">{{ user["password"] }}</td>
+        <td class="password-cell">{{ user["password"][:20] }}...</td>
         <td><span class="role-badge role-{{ user['role'] }}">{{ user["role"] }}</span></td>
       </tr>
       {% endfor %}
