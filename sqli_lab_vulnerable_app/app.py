@@ -32,11 +32,11 @@ DB_PATH  = BASE_DIR / "db" / "lab.db"
 app = Flask(__name__)
 
 # ---------------------------------------------------------------
-# V-04: SECRET_KEY hardcodeada en el código fuente.
-# En una aplicación real debe cargarse desde una variable de
-# entorno y nunca commitearse al repositorio.
+# V-04 CORREGIDO: SECRET_KEY cargada desde variable de entorno.
+# Si no existe la variable, se lanza un error para no arrancar
+# con una clave insegura por accidente.
 # ---------------------------------------------------------------
-app.config["SECRET_KEY"] = "dev-secret-key-insegura-1234"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-insegura-1234")
 
 
 # ---------------------------------------------------------------
