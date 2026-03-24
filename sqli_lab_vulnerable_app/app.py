@@ -23,6 +23,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 import sqlite3
 import os
+from werkzeug.security import generate_password_hash, check_password_hash
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -90,9 +91,9 @@ def init_db():
     cur.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
         users = [
-            ("admin",   "Admin123",   "admin"),
-            ("analyst", "Analyst123", "user"),
-            ("student", "Student123", "user"),
+            ("admin",   generate_password_hash("Admin123"),   "admin"),
+            ("analyst", generate_password_hash("Analyst123"), "user"),
+            ("student", generate_password_hash("Student123"), "user"),
         ]
         cur.executemany(
             "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
@@ -167,18 +168,18 @@ def login():
         conn = get_connection()
         try:
             user = conn.execute(
-                "SELECT id, username, role FROM users WHERE username = ? AND password = ?",
-                (username, password)
+                "SELECT id, username, password, role FROM users WHERE username = ?",
+                (username,)
             ).fetchone()
         except Exception as e:
             # El error de SQLite se muestra directamente — también
             # es información sensible que no debe exponerse.
             flash(f"Error en la base de datos: {e}", "error")
             conn.close()
-            return render_template("login.html", last_query=query)
+            return render_template("login.html")
         conn.close()
 
-        if user:
+        if user and check_password_hash(user["password"], password):
             session["user_id"]  = user["id"]
             session["username"] = user["username"]
             session["role"]     = user["role"]
@@ -186,7 +187,7 @@ def login():
             flash("Inicio de sesión exitoso.", "success")
             return redirect(url_for("dashboard"))
 
-        log_event("LOGIN_FAIL", username, f"query={query}")
+        log_event("LOGIN_FAIL", username, detail="Credenciales invalidas")
         flash("Credenciales incorrectas.", "error")
 
     return render_template("login.html")
