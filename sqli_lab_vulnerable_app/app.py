@@ -164,11 +164,12 @@ def login():
         # V-01: Consulta vulnerable en UNA SOLA LÍNEA para que el comentario
         # SQL (--) funcione correctamente en SQLite y el payload surta efecto.
         # Payload de ejemplo: usuario = admin' --  / password = (cualquier cosa)
-        query = f"SELECT id, username, role FROM users WHERE username = '{username}' AND password = '{password}'"
-
         conn = get_connection()
         try:
-            user = conn.execute(query).fetchone()
+            user = conn.execute(
+                "SELECT id, username, role FROM users WHERE username = ? AND password = ?",
+                (username, password)
+            ).fetchone()
         except Exception as e:
             # El error de SQLite se muestra directamente — también
             # es información sensible que no debe exponerse.
