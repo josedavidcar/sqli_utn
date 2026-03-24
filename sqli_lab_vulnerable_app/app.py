@@ -25,12 +25,14 @@ import sqlite3
 import os
 from werkzeug.security import generate_password_hash, check_password_hash
 from pathlib import Path
+from flask_wtf.csrf import CSRFProtect
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH  = BASE_DIR / "db" / "lab.db"
 
 app = Flask(__name__)
-
+csrf = CSRFProtect(app)
 # ---------------------------------------------------------------
 # V-04: SECRET_KEY hardcodeada en el código fuente.
 # En una aplicación real debe cargarse desde una variable de
