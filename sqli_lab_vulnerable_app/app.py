@@ -211,12 +211,10 @@ def search():
         flash("Debe iniciar sesión primero.", "error")
         return redirect(url_for("login"))
 
-    books     = []
-    raw_query = None
+    books = []
 
     if request.method == "POST":
         term = request.form.get("term", "")
-
         # ---------------------------------------------------
         # V-02: SQL INJECTION EN BÚSQUEDA
         # El término de búsqueda se inserta directamente en
@@ -241,10 +239,11 @@ def search():
             flash(f"Error en la base de datos: {e}", "error")
         conn.close()
 
+    
+
     # V-06: La consulta SQL cruda se pasa al template y se
     # muestra en pantalla — expone la estructura interna de la BD.
-    return render_template("search.html", books=books, raw_query=raw_query)
-
+    return render_template("search.html", books=books)
 
 @app.route("/admin")
 def admin():
