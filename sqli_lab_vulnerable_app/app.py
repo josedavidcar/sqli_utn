@@ -4,19 +4,17 @@
   Universidad Técnica Nacional
 =============================================================
 
-  ⚠️  ESTE ARCHIVO CONTIENE VULNERABILIDADES INTENCIONALES ⚠️
-  Uso exclusivo para laboratorio académico local.
-  No exponer a Internet ni usar fuera de entorno controlado.
+  ✅ VERSIÓN CORREGIDA — Todas las vulnerabilidades han sido resueltas.
 
-  Vulnerabilidades presentes (para que los estudiantes las encuentren):
-    V-01  SQL Injection en login (concatenación directa)
-    V-02  SQL Injection en búsqueda (concatenación directa)
-    V-03  Contraseñas en texto plano (sin hashing)
-    V-04  SECRET_KEY hardcodeada en el código fuente
-    V-05  Modo debug=True activo (expone debugger interactivo)
-    V-06  Exposición de la consulta SQL cruda en la interfaz
-    V-07  Enlace "Admin" visible para todos los roles en la navegación
-    V-08  Sin protección CSRF en formularios
+  Correcciones aplicadas:
+    V-01  Consulta parametrizada en login (usando ?)
+    V-02  Consulta parametrizada en búsqueda (usando ?)
+    V-03  Contraseñas con hash usando werkzeug.security
+    V-04  SECRET_KEY cargada desde variable de entorno
+    V-05  debug=False (cargado desde variable de entorno)
+    V-06  raw_query eliminada del template
+    V-07  Enlace Admin solo visible para rol admin (en layout.html)
+    V-08  Protección CSRF con Flask-WTF
 =============================================================
 """
 
@@ -45,6 +43,7 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-insegura
 # Recuerda agregar {{ csrf_token() }} en cada <form> del template.
 # ---------------------------------------------------------------
 csrf = CSRFProtect(app)
+
 
 # ---------------------------------------------------------------
 # Conexión a la base de datos
@@ -179,6 +178,21 @@ def login():
             return render_template("login.html")
         conn.close()
 
+        # V-03 CORREGIDO: se verifica el hash, no el texto plano
+        if user and check_password_hash(user["password"], password):
+            session["user_id"]  = user["id"]
+            session["username"] = user["username"]
+            session["role"]     = user["role"]
+            log_event("LOGIN_OK", user["username"])
+            flash("Inicio de sesión exitoso.", "success")
+            return redirect(url_for("dashboard"))
+
+        log_event("LOGIN_FAIL", username)
+        flash("Credenciales incorrectas.", "error")
+
+    # V-06 CORREGIDO: ya no se pasa raw_query al template
+    return render_template("login.html")
+
 
 @app.route("/dashboard")
 def dashboard():
@@ -198,8 +212,7 @@ def search():
         flash("Debe iniciar sesión primero.", "error")
         return redirect(url_for("login"))
 
-    books     = []
-    raw_query = None
+    books = []
 
     if request.method == "POST":
         term = request.form.get("term", "")
@@ -241,12 +254,12 @@ def admin():
         return redirect(url_for("dashboard"))
 
     conn  = get_connection()
-    users = conn.execute("SELECT id, username, password, role FROM users ORDER BY id").fetchall()
+    # V-03 CORREGIDO: ya no se expone la columna password en texto plano.
+    # Se muestra solo id, username y role.
+    users = conn.execute("SELECT id, username, role FROM users ORDER BY id").fetchall()
     logs  = conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 20").fetchall()
     conn.close()
 
-    # Nota: se incluye la columna password (texto plano) para que
-    # los estudiantes vean claramente la V-03 desde el panel admin.
     return render_template("admin.html", users=users, logs=logs)
 
 
