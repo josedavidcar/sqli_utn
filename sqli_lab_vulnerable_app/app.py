@@ -196,25 +196,24 @@ def search():
         term = request.form.get("term", "")
 
         # ---------------------------------------------------
-        # V-02: SQL INJECTION EN BÚSQUEDA
-        # El término de búsqueda se inserta directamente en
-        # la consulta con LIKE.
-        #
-        # Payload para extraer todos los usuarios:
+        # V-02 CORREGIDO: Consulta parametrizada con ?
+        # El wildcard % se construye en Python y se pasa
+        # como parámetro, nunca dentro del string SQL.
+        # Un payload como:
         #   %' UNION SELECT id, username, password, role FROM users --
-        #
-        # Payload para verificar número de columnas:
-        #   %' UNION SELECT 1,2,3,4 --
+        # ahora es tratado como texto literal en el LIKE,
+        # por lo que simplemente no retorna resultados.
         # ---------------------------------------------------
-        # V-02: Búsqueda vulnerable también en una sola línea.
-        # Payload: %' UNION SELECT id, username, password, role FROM users --
-        raw_query = f"SELECT id, title, author, category FROM books WHERE title LIKE '%{term}%' OR author LIKE '%{term}%' OR category LIKE '%{term}%'"
-
+        search_term = f"%{term}%"
         conn = get_connection()
         try:
-            books = conn.execute(raw_query).fetchall()
+            books = conn.execute(
+                """SELECT id, title, author, category FROM books
+                   WHERE title LIKE ? OR author LIKE ? OR category LIKE ?""",
+                (search_term, search_term, search_term)
+            ).fetchall()
         except Exception as e:
-            flash(f"Error en la base de datos: {e}", "error")
+            flash("Error interno. Intente de nuevo.", "error")
         conn.close()
 
     # V-06: La consulta SQL cruda se pasa al template y se
