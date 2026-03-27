@@ -1,40 +1,20 @@
-"""
-=============================================================
-  SQL INJECTION VULNERABLE LAB  –  ISW-1013 Calidad del Software
-  Universidad Técnica Nacional
-=============================================================
-
-  ⚠️  ESTE ARCHIVO CONTIENE VULNERABILIDADES INTENCIONALES ⚠️
-  Uso exclusivo para laboratorio académico local.
-  No exponer a Internet ni usar fuera de entorno controlado.
-
-  Vulnerabilidades presentes (para que los estudiantes las encuentren):
-    V-01  SQL Injection en login (concatenación directa)
-    V-02  SQL Injection en búsqueda (concatenación directa)
-    V-03  Contraseñas en texto plano (sin hashing)
-    V-04  SECRET_KEY hardcodeada en el código fuente
-    V-05  Modo debug=True activo (expone debugger interactivo)
-    V-06  Exposición de la consulta SQL cruda en la interfaz
-    V-07  Enlace "Admin" visible para todos los roles en la navegación
-    V-08  Sin protección CSRF en formularios
-=============================================================
-"""
-
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 import sqlite3
+import os
 from pathlib import Path
+from flask_wtf.csrf import CSRFProtect
+from werkzeug.security import generate_password_hash, check_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH  = BASE_DIR / "db" / "lab.db"
+DB_PATH = BASE_DIR / "db" / "lab.db"
 
 app = Flask(__name__)
 
-# ---------------------------------------------------------------
-# V-04: SECRET_KEY hardcodeada en el código fuente.
-# En una aplicación real debe cargarse desde una variable de
-# entorno y nunca commitearse al repositorio.
-# ---------------------------------------------------------------
-app.config["SECRET_KEY"] = "dev-secret-key-insegura-1234"
+# V-04 corregida: SECRET_KEY desde variable de entorno
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key-temporal-segura")
+
+# V-08 corregida: protección CSRF
+csrf = CSRFProtect(app)
 
 
 # ---------------------------------------------------------------
@@ -51,7 +31,7 @@ def get_connection():
 # ---------------------------------------------------------------
 def init_db():
     conn = get_connection()
-    cur  = conn.cursor()
+    cur = conn.cursor()
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -81,17 +61,13 @@ def init_db():
     )
     """)
 
-    # -------------------------------------------------------
-    # V-03: Contraseñas almacenadas en TEXTO PLANO.
-    # Nunca deben almacenarse así en una aplicación real.
-    # Deben usarse bcrypt, Argon2 o PBKDF2.
-    # -------------------------------------------------------
+    # V-03 corregida: contraseñas con hash
     cur.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
         users = [
-            ("admin",   "Admin123",   "admin"),
-            ("analyst", "Analyst123", "user"),
-            ("student", "Student123", "user"),
+            ("admin", generate_password_hash("Admin123"), "admin"),
+            ("analyst", generate_password_hash("Analyst123"), "user"),
+            ("student", generate_password_hash("Student123"), "user"),
         ]
         cur.executemany(
             "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
@@ -101,14 +77,14 @@ def init_db():
     cur.execute("SELECT COUNT(*) FROM books")
     if cur.fetchone()[0] == 0:
         books = [
-            ("Secure Coding Fundamentals",   "J. Howard",    "security"),
-            ("Flask Web Patterns",           "A. Miller",    "development"),
-            ("Practical SQL",                "A. DeBarros",  "database"),
-            ("Threat Modeling Essentials",   "M. Silva",     "security"),
-            ("Performance Testing Handbook", "R. Jones",     "qa"),
-            ("OWASP Testing Guide",          "OWASP Team",   "security"),
-            ("Clean Code",                   "R. Martin",    "development"),
-            ("The Web Application Hacker",   "Stuttard",     "security"),
+            ("Secure Coding Fundamentals", "J. Howard", "security"),
+            ("Flask Web Patterns", "A. Miller", "development"),
+            ("Practical SQL", "A. DeBarros", "database"),
+            ("Threat Modeling Essentials", "M. Silva", "security"),
+            ("Performance Testing Handbook", "R. Jones", "qa"),
+            ("OWASP Testing Guide", "OWASP Team", "security"),
+            ("Clean Code", "R. Martin", "development"),
+            ("The Web Application Hacker", "Stuttard", "security"),
         ]
         cur.executemany(
             "INSERT INTO books (title, author, category) VALUES (?, ?, ?)",
@@ -120,7 +96,6 @@ def init_db():
 
 
 def log_event(event, username=None, detail=None):
-    """Registra un evento en el log de auditoría."""
     conn = get_connection()
     conn.execute(
         "INSERT INTO audit_log (event, username, detail) VALUES (?, ?, ?)",
@@ -144,47 +119,33 @@ def index():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username", "")
+        username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-
-        # ---------------------------------------------------
-        # V-01: SQL INJECTION EN LOGIN
-        # La consulta se construye concatenando directamente
-        # el input del usuario sin ningún tipo de validación.
-        #
-        # Payload de ejemplo que omite la contraseña:
-        #   usuario:  admin' --
-        #   password: (cualquier cosa)
-        #
-        # Payload que accede sin conocer ningún usuario:
-        #   usuario:  ' OR '1'='1' --
-        #   password: (cualquier cosa)
-        # ---------------------------------------------------
-        # V-01: Consulta vulnerable en UNA SOLA LÍNEA para que el comentario
-        # SQL (--) funcione correctamente en SQLite y el payload surta efecto.
-        # Payload de ejemplo: usuario = admin' --  / password = (cualquier cosa)
-        query = f"SELECT id, username, role FROM users WHERE username = '{username}' AND password = '{password}'"
 
         conn = get_connection()
         try:
-            user = conn.execute(query).fetchone()
-        except Exception as e:
-            # El error de SQLite se muestra directamente — también
-            # es información sensible que no debe exponerse.
-            flash(f"Error en la base de datos: {e}", "error")
+            # V-01 corregida: consulta parametrizada
+            user = conn.execute(
+                "SELECT id, username, password, role FROM users WHERE username = ?",
+                (username,)
+            ).fetchone()
+        except Exception:
+            flash("Error interno en la base de datos.", "error")
             conn.close()
-            return render_template("login.html", last_query=query)
+            return render_template("login.html")
+
         conn.close()
 
-        if user:
-            session["user_id"]  = user["id"]
+        # V-03 corregida: validar con hash
+        if user and check_password_hash(user["password"], password):
+            session["user_id"] = user["id"]
             session["username"] = user["username"]
-            session["role"]     = user["role"]
+            session["role"] = user["role"]
             log_event("LOGIN_OK", user["username"])
             flash("Inicio de sesión exitoso.", "success")
             return redirect(url_for("dashboard"))
 
-        log_event("LOGIN_FAIL", username, f"query={query}")
+        log_event("LOGIN_FAIL", username, "Credenciales inválidas")
         flash("Credenciales incorrectas.", "error")
 
     return render_template("login.html")
@@ -195,6 +156,7 @@ def dashboard():
     if not session.get("username"):
         flash("Debe iniciar sesión primero.", "error")
         return redirect(url_for("login"))
+
     return render_template(
         "dashboard.html",
         username=session.get("username"),
@@ -208,37 +170,28 @@ def search():
         flash("Debe iniciar sesión primero.", "error")
         return redirect(url_for("login"))
 
-    books     = []
-    raw_query = None
+    books = []
 
     if request.method == "POST":
-        term = request.form.get("term", "")
-
-        # ---------------------------------------------------
-        # V-02: SQL INJECTION EN BÚSQUEDA
-        # El término de búsqueda se inserta directamente en
-        # la consulta con LIKE.
-        #
-        # Payload para extraer todos los usuarios:
-        #   %' UNION SELECT id, username, password, role FROM users --
-        #
-        # Payload para verificar número de columnas:
-        #   %' UNION SELECT 1,2,3,4 --
-        # ---------------------------------------------------
-        # V-02: Búsqueda vulnerable también en una sola línea.
-        # Payload: %' UNION SELECT id, username, password, role FROM users --
-        raw_query = f"SELECT id, title, author, category FROM books WHERE title LIKE '%{term}%' OR author LIKE '%{term}%' OR category LIKE '%{term}%'"
+        term = request.form.get("term", "").strip()
+        like_term = f"%{term}%"
 
         conn = get_connection()
         try:
-            books = conn.execute(raw_query).fetchall()
-        except Exception as e:
-            flash(f"Error en la base de datos: {e}", "error")
+            # V-02 corregida: consulta parametrizada
+            books = conn.execute("""
+                SELECT id, title, author, category
+                FROM books
+                WHERE title LIKE ?
+                   OR author LIKE ?
+                   OR category LIKE ?
+            """, (like_term, like_term, like_term)).fetchall()
+        except Exception:
+            flash("Error interno en la base de datos.", "error")
         conn.close()
 
-    # V-06: La consulta SQL cruda se pasa al template y se
-    # muestra en pantalla — expone la estructura interna de la BD.
-    return render_template("search.html", books=books, raw_query=raw_query)
+    # V-06 corregida: ya no se envía raw_query al template
+    return render_template("search.html", books=books)
 
 
 @app.route("/admin")
@@ -252,31 +205,38 @@ def admin():
         log_event("ACCESS_DENIED", session.get("username"), "Intento de acceso a /admin")
         return redirect(url_for("dashboard"))
 
-    conn  = get_connection()
-    users = conn.execute("SELECT id, username, password, role FROM users ORDER BY id").fetchall()
-    logs  = conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 20").fetchall()
+    conn = get_connection()
+
+    # V-03 reforzada: no mostrar contraseñas en panel admin
+    users = conn.execute(
+        "SELECT id, username, role FROM users ORDER BY id"
+    ).fetchall()
+
+    logs = conn.execute(
+        "SELECT * FROM audit_log ORDER BY id DESC LIMIT 20"
+    ).fetchall()
+
     conn.close()
 
-    # Nota: se incluye la columna password (texto plano) para que
-    # los estudiantes vean claramente la V-03 desde el panel admin.
     return render_template("admin.html", users=users, logs=logs)
 
 
 @app.route("/logout")
 def logout():
-    log_event("LOGOUT", session.get("username"))
+    if session.get("username"):
+        log_event("LOGOUT", session.get("username"))
     session.clear()
     flash("Sesión cerrada.", "success")
     return redirect(url_for("login"))
 
 
 # ---------------------------------------------------------------
-# V-05: debug=True activo.
-# En modo debug, Flask activa un debugger interactivo en el
-# navegador cuando ocurre un error. Cualquier visitante puede
-# ejecutar código Python arbitrario en el servidor.
-# Nunca debe usarse debug=True en producción.
+# Ejecución
 # ---------------------------------------------------------------
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+
+    # V-05 corregida: debug desactivado o controlado por variable
+    debug_mode = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
+
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)

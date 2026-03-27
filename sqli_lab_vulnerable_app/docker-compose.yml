@@ -6,4 +6,5 @@ services:
     volumes:
       - ./db:/app/db
     environment:
-      - FLASK_ENV=development
+      - SECRET_KEY=lab-secret-key-local
+      - FLASK_DEBUG=false
