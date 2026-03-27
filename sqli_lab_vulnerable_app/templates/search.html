@@ -7,33 +7,31 @@
 
 <div class="card">
   <form method="post">
+    <!-- ✅ V-08 corregida: CSRF -->
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
     <div class="form-group">
       <label for="term">Término de búsqueda</label>
       <input type="text" id="term" name="term" placeholder="Buscar por título, autor o categoría...">
     </div>
+
     <button type="submit" class="btn-primary">Buscar</button>
   </form>
 </div>
 
-{% if raw_query %}
-<!--
-  V-06: La consulta SQL ejecutada se muestra en pantalla.
-  Esto expone la estructura interna de la base de datos
-  y facilita enormemente la construcción de ataques.
-  Nunca debe mostrarse información interna del servidor al usuario.
--->
-<div class="card vuln-card">
-  <h3>⚠️ Consulta SQL ejecutada (esto no debería mostrarse)</h3>
-  <pre class="code-block">{{ raw_query }}</pre>
-</div>
-{% endif %}
+<!-- ❌ V-06 eliminada: ya NO se muestra la query SQL -->
 
 {% if books %}
 <div class="card">
   <h3>Resultados ({{ books | length }} encontrados)</h3>
   <table class="data-table">
     <thead>
-      <tr><th>ID</th><th>Título</th><th>Autor</th><th>Categoría</th></tr>
+      <tr>
+        <th>ID</th>
+        <th>Título</th>
+        <th>Autor</th>
+        <th>Categoría</th>
+      </tr>
     </thead>
     <tbody>
       {% for book in books %}
@@ -41,13 +39,16 @@
         <td>{{ book["id"] }}</td>
         <td>{{ book["title"] }}</td>
         <td>{{ book["author"] }}</td>
-        <td><span class="category-badge">{{ book["category"] }}</span></td>
+        <td>
+          <span class="category-badge">{{ book["category"] }}</span>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-{% elif raw_query %}
+
+{% else %}
 <div class="card">
   <p>No se encontraron resultados.</p>
 </div>
